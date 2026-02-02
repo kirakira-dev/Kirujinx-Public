@@ -1,0 +1,104 @@
+{
+  "Locales": [
+    {
+      "ID": "MenuBarActions_StartCapture",
+      "Translations": {
+        "ar_SA": "",
+        "de_DE": "",
+        "el_GR": "",
+        "en_US": "Start RenderDoc Frame Capture",
+        "es_ES": "Iniciar una captura de fotograma de RenderDoc",
+        "fr_FR": "Démarrer une capture de trame RenderDoc",
+        "he_IL": "",
+        "it_IT": "",
+        "ja_JP": "",
+        "ko_KR": "",
+        "no_NO": "",
+        "pl_PL": "",
+        "pt_BR": "",
+        "ru_RU": "",
+        "sv_SE": "",
+        "th_TH": "",
+        "tr_TR": "",
+        "uk_UA": "",
+        "zh_CN": "",
+        "zh_TW": ""
+      }
+    },
+    {
+      "ID": "MenuBarActions_EndCapture",
+      "Translations": {
+        "ar_SA": "",
+        "de_DE": "",
+        "el_GR": "",
+        "en_US": "End RenderDoc Frame Capture",
+        "es_ES": "Detener la captura de fotograma de RenderDoc",
+        "fr_FR": "Arrêter la capture de trame RenderDoc",
+        "he_IL": "",
+        "it_IT": "",
+        "ja_JP": "",
+        "ko_KR": "",
+        "no_NO": "",
+        "pl_PL": "",
+        "pt_BR": "",
+        "ru_RU": "",
+        "sv_SE": "",
+        "th_TH": "",
+        "tr_TR": "",
+        "uk_UA": "",
+        "zh_CN": "",
+        "zh_TW": ""
+      }
+    },
+    {
+      "ID": "MenuBarActions_DiscardCapture",
+      "Translations": {
+        "ar_SA": "",
+        "de_DE": "",
+        "el_GR": "",
+        "en_US": "Discard RenderDoc Frame Capture",
+        "es_ES": "Descartar la captura de fotograma de RenderDoc",
+        "fr_FR": "Supprimer la capture de trame RenderDoc",
+        "he_IL": "",
+        "it_IT": "",
+        "ja_JP": "",
+        "ko_KR": "",
+        "no_NO": "",
+        "pl_PL": "",
+        "pt_BR": "",
+        "ru_RU": "",
+        "sv_SE": "",
+        "th_TH": "",
+        "tr_TR": "",
+        "uk_UA": "",
+        "zh_CN": "",
+        "zh_TW": ""
+      }
+    },
+    {
+      "ID": "MenuBarActions_DiscardCapture_ToolTip",
+      "Translations": {
+        "ar_SA": "",
+        "de_DE": "",
+        "el_GR": "",
+        "en_US": "Ends the currently active RenderDoc Frame Capture, immediately discarding its result.",
+        "es_ES": "Finaliza la captura de fotograma de RenderDoc actualmente activa y descarta inmediatamente su resultado.",
+        "fr_FR": "Met fin à la capture de trame RenderDoc en cours, en supprimant immédiatement son résultat.",
+        "he_IL": "",
+        "it_IT": "",
+        "ja_JP": "",
+        "ko_KR": "",
+        "no_NO": "",
+        "pl_PL": "",
+        "pt_BR": "",
+        "ru_RU": "",
+        "sv_SE": "",
+        "th_TH": "",
+        "tr_TR": "",
+        "uk_UA": "",
+        "zh_CN": "",
+        "zh_TW": ""
+      }
+    }
+  ]
+}

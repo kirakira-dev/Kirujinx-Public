@@ -1,0 +1,1066 @@
+using Avalonia.Collections;
+using Avalonia.Controls;
+using Avalonia.Svg.Skia;
+using CommunityToolkit.Mvvm.ComponentModel;
+using Gommon;
+using Ryujinx.Ava.Common.Locale;
+using Ryujinx.Ava.Input;
+using Ryujinx.Ava.Systems.Configuration;
+using Ryujinx.Ava.UI.Helpers;
+using Ryujinx.Ava.UI.Models;
+using Ryujinx.Ava.UI.Models.Input;
+using Ryujinx.Ava.UI.Windows;
+using Ryujinx.Common;
+using Ryujinx.Common.Configuration;
+using Ryujinx.Common.Configuration.Hid;
+using Ryujinx.Common.Configuration.Hid.Controller;
+using Ryujinx.Common.Configuration.Hid.Controller.Motion;
+using Ryujinx.Common.Configuration.Hid.Keyboard;
+using Ryujinx.Common.Logging;
+using Ryujinx.Common.Utilities;
+using Ryujinx.Input;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using ConfigGamepadInputId = Ryujinx.Common.Configuration.Hid.Controller.GamepadInputId;
+using ConfigStickInputId = Ryujinx.Common.Configuration.Hid.Controller.StickInputId;
+using Key = Ryujinx.Common.Configuration.Hid.Key;
+
+namespace Ryujinx.Ava.UI.ViewModels.Input
+{
+    public partial class InputViewModel : BaseModel, IDisposable
+    {
+        private const string Disabled = "disabled";
+        private const string ProControllerResource = "Ryujinx/Assets/Icons/Controller_ProCon.svg";
+        private const string JoyConPairResource = "Ryujinx/Assets/Icons/Controller_JoyConPair.svg";
+        private const string JoyConLeftResource = "Ryujinx/Assets/Icons/Controller_JoyConLeft.svg";
+        private const string JoyConRightResource = "Ryujinx/Assets/Icons/Controller_JoyConRight.svg";
+        private const string KeyboardString = "keyboard";
+        private const string ControllerString = "controller";
+        private readonly MainWindow _mainWindow;
+
+        private PlayerIndex _playerId;
+        private PlayerIndex _playerIdChoose;
+        private int _controller;
+        private string _controllerImage;
+        private int _device;
+        private bool _isChangeTrackingActive;
+        [ObservableProperty]
+        public partial bool IsModified { get; set; }
+
+        [ObservableProperty]
+        public partial string ProfileName { get; set; }
+
+        [ObservableProperty]
+        public partial bool NotificationIsVisible { get; set; } // Automatically call the NotificationView property with OnPropertyChanged()
+
+        [ObservableProperty]
+        public partial string NotificationText { get; set; } // Automatically call the NotificationText property with OnPropertyChanged()
+
+        private bool _isLoaded;
+
+        private static readonly InputConfigJsonSerializerContext _serializerContext = new(JsonHelper.GetDefaultSerializerOptions());
+
+        public IGamepadDriver AvaloniaKeyboardDriver { get; }
+
+        public IGamepad SelectedGamepad
+        {
+            get;
+            private set
+            {
+                Rainbow.Reset();
+
+                field = value;
+
+                if (ConfigViewModel is ControllerInputViewModel { Config.UseRainbowLed: true })
+                    Rainbow.Updated += (ref Color color) => field.SetLed((uint)color.ToArgb());
+
+                OnPropertiesChanged(nameof(HasLed), nameof(CanClearLed));
+            }
+        }
+
+        public StickVisualizer VisualStick { get; private set; }
+
+        public ObservableCollection<PlayerModel> PlayerIndexes { get; set; }
+        public ObservableCollection<(DeviceType Type, string Id, string Name)> Devices { get; set; }
+        internal ObservableCollection<ControllerModel> Controllers { get; set; }
+        public AvaloniaList<string> ProfilesList { get; set; }
+        public AvaloniaList<string> DeviceList { get; set; }
+
+        public bool UseGlobalConfig;
+
+        // XAML Flags
+        public bool ShowSettings => _device > 0;
+        public bool IsController => _device > 1;
+        public bool IsKeyboard => !IsController;
+        public bool IsRight { get; set; }
+        public bool IsLeft { get; set; }
+        public string RevertDeviceId { get; set; }
+        public bool HasLed => (SelectedGamepad.Features & GamepadFeaturesFlag.Led) != 0;
+        public bool CanClearLed => SelectedGamepad.Name.ContainsIgnoreCase("DualSense");
+
+        public event Action NotifyChangesEvent;
+
+        public string ChosenProfile
+        {
+            get;
+            set
+            {
+                // When you select a profile, the settings from the profile will be applied.
+                // To save the settings, you still need to click the apply button
+                field = value;
+                LoadProfile();
+                OnPropertyChanged();
+            }
+        }
+
+        public object ConfigViewModel
+        {
+            get;
+            set
+            {
+                field = value;
+
+                VisualStick.UpdateConfig(value);
+
+                OnPropertyChanged();
+            }
+        }
+
+        public PlayerIndex PlayerIdChoose
+        {
+            get => _playerIdChoose;
+            set { }
+        }
+
+        public PlayerIndex PlayerId
+        {
+            get => _playerId;
+            set
+            {
+                if (IsModified)
+                {
+                    _playerIdChoose = value;
+                    return;
+                }
+
+                IsModified = false;
+                _playerId = value;
+                _isChangeTrackingActive = false;
+
+                if (!Enum.IsDefined<PlayerIndex>(_playerId))
+                {
+                    _playerId = PlayerIndex.Player1;
+
+                }
+
+                _isLoaded = false;
+                LoadConfiguration();
+                LoadDevice();
+                LoadProfiles();
+
+                RevertDeviceId = Devices[Device].Id;
+                _isLoaded = true;
+                _isChangeTrackingActive = true;
+                OnPropertyChanged();
+            }
+        }
+
+        public int Controller
+        {
+            get => _controller;
+            set
+            {
+                MarkAsChanged();
+
+                _controller = value;
+
+                if (_controller == -1)
+                {
+                    _controller = 0;
+                }
+
+                if (Controllers.Count > 0 && value < Controllers.Count && _controller > -1)
+                {
+                    ControllerType controller = Controllers[_controller].Type;
+
+                    IsLeft = true;
+                    IsRight = true;
+
+                    switch (controller)
+                    {
+                        case ControllerType.Handheld:
+                            ControllerImage = JoyConPairResource;
+                            break;
+                        case ControllerType.ProController:
+                            ControllerImage = ProControllerResource;
+                            break;
+                        case ControllerType.JoyconPair:
+                            ControllerImage = JoyConPairResource;
+                            break;
+                        case ControllerType.JoyconLeft:
+                            ControllerImage = JoyConLeftResource;
+                            IsRight = false;
+                            break;
+                        case ControllerType.JoyconRight:
+                            ControllerImage = JoyConRightResource;
+                            IsLeft = false;
+                            break;
+                    }
+
+                    LoadInputDriver();
+                    LoadProfiles();
+                }
+
+                OnPropertyChanged();
+                NotifyChanges();
+            }
+        }
+
+        public string ControllerImage
+        {
+            get => _controllerImage;
+            set
+            {
+                _controllerImage = value;
+
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Image));
+            }
+        }
+
+        public SvgImage Image
+        {
+            get
+            {
+                SvgImage image = new();
+
+                if (!string.IsNullOrWhiteSpace(_controllerImage))
+                {
+                    SvgSource source = SvgSource.LoadFromStream(EmbeddedResources.GetStream(_controllerImage));
+
+                    image.Source = source;
+                }
+
+                return image;
+            }
+        }
+
+        public int Device
+        {
+            get => _device;
+            set
+            {
+                MarkAsChanged();
+
+                _device = value < 0 ? 0 : value;
+
+                if (_device >= Devices.Count)
+                {
+                    return;
+                }
+
+                DeviceType selected = Devices[_device].Type;
+
+                if (selected != DeviceType.None)
+                {
+                    LoadControllers();
+
+                    if (_isLoaded)
+                    {
+                        LoadConfiguration(LoadDefaultConfiguration());
+                    }
+                }
+
+                FindPairedDeviceInConfigFile();
+                OnPropertyChanged();
+                NotifyChanges();
+            }
+        }
+
+        public InputConfig Config { get; set; }
+
+        public InputViewModel(UserControl owner, bool useGlobal = false) : this()
+        {
+            if (Program.PreviewerDetached)
+            {
+                _mainWindow = RyujinxApp.MainWindow;
+
+                AvaloniaKeyboardDriver = new AvaloniaKeyboardDriver(owner);
+
+                _mainWindow.InputManager.GamepadDriver.OnGamepadConnected += HandleOnGamepadConnected;
+                _mainWindow.InputManager.GamepadDriver.OnGamepadDisconnected += HandleOnGamepadDisconnected;
+
+                _mainWindow.ViewModel.AppHost?.NpadManager.BlockInputUpdates();
+
+                UseGlobalConfig = useGlobal;
+
+                _isLoaded = false;
+
+                LoadDevices();
+
+                PlayerId = PlayerIndex.Player1;
+            }
+
+            _isChangeTrackingActive = true;
+        }
+
+        public InputViewModel()
+        {
+            PlayerIndexes = [];
+            Controllers = [];
+            Devices = [];
+            ProfilesList = [];
+            DeviceList = [];
+            VisualStick = new StickVisualizer(this);
+
+            ControllerImage = ProControllerResource;
+
+            PlayerIndexes.Add(new(PlayerIndex.Player1, LocaleManager.Instance[LocaleKeys.ControllerSettingsPlayer1]));
+            PlayerIndexes.Add(new(PlayerIndex.Player2, LocaleManager.Instance[LocaleKeys.ControllerSettingsPlayer2]));
+            PlayerIndexes.Add(new(PlayerIndex.Player3, LocaleManager.Instance[LocaleKeys.ControllerSettingsPlayer3]));
+            PlayerIndexes.Add(new(PlayerIndex.Player4, LocaleManager.Instance[LocaleKeys.ControllerSettingsPlayer4]));
+            PlayerIndexes.Add(new(PlayerIndex.Player5, LocaleManager.Instance[LocaleKeys.ControllerSettingsPlayer5]));
+            PlayerIndexes.Add(new(PlayerIndex.Player6, LocaleManager.Instance[LocaleKeys.ControllerSettingsPlayer6]));
+            PlayerIndexes.Add(new(PlayerIndex.Player7, LocaleManager.Instance[LocaleKeys.ControllerSettingsPlayer7]));
+            PlayerIndexes.Add(new(PlayerIndex.Player8, LocaleManager.Instance[LocaleKeys.ControllerSettingsPlayer8]));
+            PlayerIndexes.Add(new(PlayerIndex.Handheld, LocaleManager.Instance[LocaleKeys.ControllerSettingsHandheld]));
+        }
+
+
+
+        private void LoadConfiguration(InputConfig inputConfig = null)
+        {
+            if (UseGlobalConfig && Program.UseExtraConfig)
+            {
+                Config = inputConfig ?? ConfigurationState.InstanceExtra.Hid.InputConfig.Value.FirstOrDefault(inputConfig => inputConfig.PlayerIndex == _playerId);            
+            }
+            else
+            {
+                Config = inputConfig ?? ConfigurationState.Instance.Hid.InputConfig.Value.FirstOrDefault(inputConfig => inputConfig.PlayerIndex == _playerId);
+            }
+
+            if (Config is StandardKeyboardInputConfig keyboardInputConfig)
+            {
+                ConfigViewModel = new KeyboardInputViewModel(this, new KeyboardInputConfig(keyboardInputConfig), VisualStick);
+            }
+
+            if (Config is StandardControllerInputConfig controllerInputConfig)
+            {
+                ConfigViewModel = new ControllerInputViewModel(this, new GamepadInputConfig(controllerInputConfig), VisualStick);
+            }
+        }
+
+        private void FindPairedDeviceInConfigFile()
+        {
+            // This function allows you to output a message about the device configuration found in the file
+            // NOTE: if the configuration is found, we display the message "Waiting for controller connection",
+            // but only if the id gamepad belongs to the selected player
+
+            NotificationIsVisible = Config != null && Devices.FirstOrDefault(d => d.Id == Config.Id).Id != Config.Id && Config.PlayerIndex == PlayerId;
+            if (NotificationIsVisible)
+            {
+                if (string.IsNullOrEmpty(Config.Name))
+                {
+                    NotificationText = $"{LocaleManager.Instance[LocaleKeys.ControllerSettingsWaitingConnectDevice].Format("No information", Config.Id)}";
+                }
+                else
+                {
+                    NotificationText = $"{LocaleManager.Instance[LocaleKeys.ControllerSettingsWaitingConnectDevice].Format(Config.Name, Config.Id)}";
+                }
+            }
+        }
+
+        private void MarkAsChanged()
+        {
+            //If tracking is active, then allow changing the modifier      
+            if (!IsModified && _isChangeTrackingActive)
+            {
+                RevertDeviceId = Devices[Device].Id; // Remember the device to undo changes
+                IsModified = true;
+            }
+        }
+
+        public void UnlinkDevice()
+        {
+            // "Disabled" mode is available after unbinding the device
+            // NOTE: the IsModified flag to be able to apply the settings.
+            NotificationIsVisible = false;
+            IsModified = true;
+        }
+
+        public void LoadDevice()
+        {
+            if (Config == null || Config.Backend == InputBackendType.Invalid)
+            {
+                Device = 0;
+            }
+            else
+            {
+                DeviceType type = DeviceType.None;
+
+                if (Config is StandardKeyboardInputConfig)
+                {
+                    type = DeviceType.Keyboard;
+                }
+
+                if (Config is StandardControllerInputConfig)
+                {
+                    type = DeviceType.Controller;
+                }
+
+                (DeviceType Type, string Id, string Name) item = Devices.FirstOrDefault(x => x.Type == type && x.Id == Config.Id);
+                if (item != default)
+                {
+                    Device = Devices.ToList().FindIndex(x => x.Id == item.Id);
+                }
+                else
+                {
+                    Device = 0;
+                }
+            }
+        }
+
+        private void LoadInputDriver()
+        {
+            if (_device < 0)
+            {
+                return;
+            }
+
+            string id = GetCurrentGamepadId();
+            DeviceType type = Devices[Device].Type;
+
+            if (type == DeviceType.None)
+            {
+                return;
+            }
+
+            if (type == DeviceType.Keyboard)
+            {
+                if (_mainWindow.InputManager.KeyboardDriver is AvaloniaKeyboardDriver)
+                {
+                    // NOTE: To get input in this window, we need to bind a custom keyboard driver instead of using the InputManager one as the main window isn't focused...
+                    SelectedGamepad = AvaloniaKeyboardDriver.GetGamepad(id);
+                }
+                else
+                {
+                    SelectedGamepad = _mainWindow.InputManager.KeyboardDriver.GetGamepad(id);
+                }
+            }
+            else
+            {
+                SelectedGamepad = _mainWindow.InputManager.GamepadDriver.GetGamepad(id);
+            }
+        }
+
+        private void HandleOnGamepadDisconnected(string id)
+        {
+            _isChangeTrackingActive = false; // Disable configuration change tracking
+
+            LoadDevices();
+
+            IsModified = true;
+            RevertChanges();
+            FindPairedDeviceInConfigFile();
+
+            _isChangeTrackingActive = true; // Enable configuration change tracking
+
+        }
+
+        private void HandleOnGamepadConnected(string id)
+        {
+            _isChangeTrackingActive = false; // Disable configuration change tracking
+
+            LoadDevices();
+
+            IsModified = true;
+            RevertChanges();
+
+            _isChangeTrackingActive = true;// Enable configuration change tracking
+
+        }
+
+        private string GetCurrentGamepadId()
+        {
+            if (_device < 0)
+            {
+                return string.Empty;
+            }
+
+            (DeviceType Type, string Id, string Name) device = Devices[Device];
+
+            if (device.Type == DeviceType.None)
+            {
+                return null;
+            }
+
+            return device.Id.Split(" ")[0];
+        }
+
+        public void LoadControllers()
+        {
+            Controllers.Clear();
+
+            if (_playerId == PlayerIndex.Handheld)
+            {
+                Controllers.Add(new(ControllerType.Handheld, LocaleManager.Instance[LocaleKeys.ControllerSettingsControllerTypeHandheld]));
+
+                Controller = 0;
+            }
+            else
+            {
+                Controllers.Add(new(ControllerType.ProController, LocaleManager.Instance[LocaleKeys.ControllerSettingsControllerTypeProController]));
+                Controllers.Add(new(ControllerType.JoyconPair, LocaleManager.Instance[LocaleKeys.ControllerSettingsControllerTypeJoyConPair]));
+                Controllers.Add(new(ControllerType.JoyconLeft, LocaleManager.Instance[LocaleKeys.ControllerSettingsControllerTypeJoyConLeft]));
+                Controllers.Add(new(ControllerType.JoyconRight, LocaleManager.Instance[LocaleKeys.ControllerSettingsControllerTypeJoyConRight]));
+
+                if (Config != null && Controllers.ToList().FindIndex(x => x.Type == Config.ControllerType) != -1)
+                {
+                    Controller = Controllers.ToList().FindIndex(x => x.Type == Config.ControllerType);
+                }
+                else
+                {
+                    Controller = 0;
+                }
+            }
+        }
+
+        private static string GetShortGamepadName(string str)
+        {
+            const string Ellipsis = "...";
+            const int MaxSize = 50;
+
+            if (str.Length > MaxSize)
+            {
+                return $"{str.AsSpan(0, MaxSize - Ellipsis.Length)}{Ellipsis}";
+            }
+
+            return str;
+        }
+
+        private static string GetShortGamepadId(string str)
+        {
+            const string Hyphen = "-";
+            const int Offset = 1;
+
+            return str[(str.IndexOf(Hyphen) + Offset)..];
+        }
+
+        public void LoadDevices()
+        {
+            string GetGamepadName(IGamepad gamepad, int controllerNumber)
+            {
+                return $"{GetShortGamepadName(gamepad.Name)} ({controllerNumber})";
+            }
+
+            string GetUniqueGamepadName(IGamepad gamepad, ref int controllerNumber)
+            {
+                string name = GetGamepadName(gamepad, controllerNumber);
+                if (Devices.Any(controller => controller.Name == name))
+                {
+                    controllerNumber++;
+                    name = GetGamepadName(gamepad, controllerNumber);
+                }
+
+                return name;
+            }
+
+            lock (Devices)
+            {
+                Devices.Clear();
+                DeviceList.Clear();
+                Devices.Add((DeviceType.None, Disabled, LocaleManager.Instance[LocaleKeys.ControllerSettingsDeviceDisabled]));
+
+                int controllerNumber = 0;
+                foreach (string id in _mainWindow.InputManager.KeyboardDriver.GamepadsIds)
+                {
+                    using IGamepad gamepad = _mainWindow.InputManager.KeyboardDriver.GetGamepad(id);
+
+                    if (gamepad != null)
+                    {
+                        Devices.Add((DeviceType.Keyboard, id, $"{GetShortGamepadName(gamepad.Name)}"));
+                    }
+                }
+
+                foreach (string id in _mainWindow.InputManager.GamepadDriver.GamepadsIds)
+                {
+                    using IGamepad gamepad = _mainWindow.InputManager.GamepadDriver.GetGamepad(id);
+
+                    if (gamepad != null)
+                    {
+                        string name = GetUniqueGamepadName(gamepad, ref controllerNumber);
+                        Devices.Add((DeviceType.Controller, id, name));
+                    }
+                }
+
+                DeviceList.AddRange(Devices.Select(x => x.Name));
+                Device = Math.Min(Device, DeviceList.Count);
+            }
+        }
+
+        private string GetProfileBasePath()
+        {
+            string path = AppDataManager.ProfilesDirPath;
+            DeviceType type = Devices[Device == -1 ? 0 : Device].Type;
+
+            if (type == DeviceType.Keyboard)
+            {
+                path = Path.Combine(path, KeyboardString);
+            }
+            else if (type == DeviceType.Controller)
+            {
+                path = Path.Combine(path, ControllerString);
+            }
+
+            return path;
+        }
+
+        private void LoadProfiles()
+        {
+            ProfilesList.Clear();
+
+            string basePath = GetProfileBasePath();
+
+            if (!Directory.Exists(basePath))
+            {
+                Directory.CreateDirectory(basePath);
+            }
+
+            ProfilesList.Add((LocaleManager.Instance[LocaleKeys.ControllerSettingsProfileDefault]));
+
+            foreach (string profile in Directory.GetFiles(basePath, "*.json", SearchOption.AllDirectories))
+            {
+                ProfilesList.Add(Path.GetFileNameWithoutExtension(profile));
+            }
+
+            if (string.IsNullOrWhiteSpace(ProfileName))
+            {
+                ProfileName = LocaleManager.Instance[LocaleKeys.ControllerSettingsProfileDefault];
+            }
+        }
+
+        public InputConfig LoadDefaultConfiguration()
+        {
+            (DeviceType Type, string Id, string Name) activeDevice = Devices.FirstOrDefault();
+
+            if (Devices.Count > 0 && Device < Devices.Count && Device >= 0)
+            {
+                activeDevice = Devices[Device];
+            }
+
+            InputConfig config;
+            if (activeDevice.Type == DeviceType.Keyboard)
+            {
+                string id = activeDevice.Id;
+                string name = activeDevice.Name;
+
+                config = new StandardKeyboardInputConfig
+                {
+                    Version = InputConfig.CurrentVersion,
+                    Backend = InputBackendType.WindowKeyboard,
+                    Id = id,
+                    Name = name,
+                    ControllerType = ControllerType.ProController,
+                    LeftJoycon = new LeftJoyconCommonConfig<Key>
+                    {
+                        DpadUp = Key.Up,
+                        DpadDown = Key.Down,
+                        DpadLeft = Key.Left,
+                        DpadRight = Key.Right,
+                        ButtonMinus = Key.Minus,
+                        ButtonL = Key.E,
+                        ButtonZl = Key.Q,
+                        ButtonSl = Key.Unbound,
+                        ButtonSr = Key.Unbound,
+                    },
+                    LeftJoyconStick =
+                        new JoyconConfigKeyboardStick<Key>
+                        {
+                            StickUp = Key.W,
+                            StickDown = Key.S,
+                            StickLeft = Key.A,
+                            StickRight = Key.D,
+                            StickButton = Key.F,
+                        },
+                    RightJoycon = new RightJoyconCommonConfig<Key>
+                    {
+                        ButtonA = Key.Z,
+                        ButtonB = Key.X,
+                        ButtonX = Key.C,
+                        ButtonY = Key.V,
+                        ButtonPlus = Key.Plus,
+                        ButtonR = Key.U,
+                        ButtonZr = Key.O,
+                        ButtonSl = Key.Unbound,
+                        ButtonSr = Key.Unbound,
+                    },
+                    RightJoyconStick = new JoyconConfigKeyboardStick<Key>
+                    {
+                        StickUp = Key.I,
+                        StickDown = Key.K,
+                        StickLeft = Key.J,
+                        StickRight = Key.L,
+                        StickButton = Key.H,
+                    },
+                };
+            }
+            else if (activeDevice.Type == DeviceType.Controller)
+            {
+                bool isNintendoStyle = Devices.ToList().FirstOrDefault(x => x.Id == activeDevice.Id).Name.Contains("Nintendo");
+
+                string id = activeDevice.Id.Split(" ")[0];
+                string name = activeDevice.Name;
+
+                config = new StandardControllerInputConfig
+                {
+                    Version = InputConfig.CurrentVersion,
+                    Backend = InputBackendType.GamepadSDL3,
+                    Id = id,
+                    Name = name,
+                    ControllerType = ControllerType.ProController,
+                    DeadzoneLeft = 0.1f,
+                    DeadzoneRight = 0.1f,
+                    RangeLeft = 1.0f,
+                    RangeRight = 1.0f,
+                    TriggerThreshold = 0.5f,
+                    LeftJoycon = new LeftJoyconCommonConfig<ConfigGamepadInputId>
+                    {
+                        DpadUp = ConfigGamepadInputId.DpadUp,
+                        DpadDown = ConfigGamepadInputId.DpadDown,
+                        DpadLeft = ConfigGamepadInputId.DpadLeft,
+                        DpadRight = ConfigGamepadInputId.DpadRight,
+                        ButtonMinus = ConfigGamepadInputId.Minus,
+                        ButtonL = ConfigGamepadInputId.LeftShoulder,
+                        ButtonZl = ConfigGamepadInputId.LeftTrigger,
+                        ButtonSl = ConfigGamepadInputId.SingleLeftTrigger0,
+                        ButtonSr = ConfigGamepadInputId.SingleRightTrigger0,
+                    },
+                    LeftJoyconStick = new JoyconConfigControllerStick<ConfigGamepadInputId, ConfigStickInputId>
+                    {
+                        Joystick = ConfigStickInputId.Left,
+                        StickButton = ConfigGamepadInputId.LeftStick,
+                        InvertStickX = false,
+                        InvertStickY = false,
+                    },
+                    RightJoycon = new RightJoyconCommonConfig<ConfigGamepadInputId>
+                    {
+                        ButtonA = isNintendoStyle ? ConfigGamepadInputId.A : ConfigGamepadInputId.B,
+                        ButtonB = isNintendoStyle ? ConfigGamepadInputId.B : ConfigGamepadInputId.A,
+                        ButtonX = isNintendoStyle ? ConfigGamepadInputId.X : ConfigGamepadInputId.Y,
+                        ButtonY = isNintendoStyle ? ConfigGamepadInputId.Y : ConfigGamepadInputId.X,
+                        ButtonPlus = ConfigGamepadInputId.Plus,
+                        ButtonR = ConfigGamepadInputId.RightShoulder,
+                        ButtonZr = ConfigGamepadInputId.RightTrigger,
+                        ButtonSl = ConfigGamepadInputId.SingleLeftTrigger1,
+                        ButtonSr = ConfigGamepadInputId.SingleRightTrigger1,
+                    },
+                    RightJoyconStick = new JoyconConfigControllerStick<ConfigGamepadInputId, ConfigStickInputId>
+                    {
+                        Joystick = ConfigStickInputId.Right,
+                        StickButton = ConfigGamepadInputId.RightStick,
+                        InvertStickX = false,
+                        InvertStickY = false,
+                    },
+                    Motion = new StandardMotionConfigController
+                    {
+                        MotionBackend = MotionInputBackendType.GamepadDriver,
+                        EnableMotion = true,
+                        Sensitivity = 100,
+                        GyroDeadzone = 1,
+                    },
+                    Rumble = new RumbleConfigController
+                    {
+                        StrongRumble = 1f,
+                        WeakRumble = 1f,
+                        EnableRumble = false,
+                    },
+                };
+            }
+            else
+            {
+                config = new InputConfig();
+            }
+
+            config.PlayerIndex = _playerId;
+
+            return config;
+        }
+
+        public void LoadProfileButton()
+        {
+            LoadProfile();
+            IsModified = true;
+        }
+
+        public async void LoadProfile()
+        {
+            if (Device == 0)
+            {
+                return;
+            }
+
+            InputConfig config = null;
+
+            if (string.IsNullOrWhiteSpace(ProfileName))
+            {
+                return;
+            }
+
+            if (ProfileName == LocaleManager.Instance[LocaleKeys.ControllerSettingsProfileDefault])
+            {
+                config = LoadDefaultConfiguration();
+            }
+            else
+            {
+                string path = Path.Combine(GetProfileBasePath(), ProfileName + ".json");
+
+                if (!File.Exists(path))
+                {
+                    int index = ProfilesList.IndexOf(ProfileName);
+                    if (index != -1)
+                    {
+                        ProfilesList.RemoveAt(index);
+                    }
+
+                    return;
+                }
+
+                try
+                {
+                    config = JsonHelper.DeserializeFromFile(path, _serializerContext.InputConfig);
+                }
+                catch (JsonException) { }
+                catch (InvalidOperationException)
+                {
+                    Logger.Error?.Print(LogClass.Configuration, $"Profile {ProfileName} is incompatible with the current input configuration system.");
+
+                    await ContentDialogHelper.CreateErrorDialog(LocaleManager.Instance.UpdateAndGetDynamicValue(LocaleKeys.DialogProfileInvalidProfileErrorMessage, ProfileName));
+
+                    return;
+                }
+            }
+
+            if (config != null)
+            {
+                _isLoaded = false;
+
+                config.Id = Config.Id; // Set current device id instead of changing device(independent profiles)
+
+                LoadConfiguration(config);
+
+                //LoadDevice();  This line of code hard-links profiles to controllers, the commented line allows profiles to be applied to all controllers 
+
+                _isLoaded = true;
+
+                NotifyChanges();
+            }
+        }
+
+        public async void SaveProfile()
+        {
+
+            if (Device == 0)
+            {
+                return;
+            }
+
+            if (ConfigViewModel == null)
+            {
+                return;
+            }
+
+            if (ProfileName == LocaleManager.Instance[LocaleKeys.ControllerSettingsProfileDefault])
+            {
+                await ContentDialogHelper.CreateErrorDialog(LocaleManager.Instance[LocaleKeys.DialogProfileDefaultProfileOverwriteErrorMessage]);
+
+                return;
+            }
+            else
+            {
+                bool validFileName = ProfileName.IndexOfAny(Path.GetInvalidFileNameChars()) == -1;
+
+                if (validFileName)
+                {
+                    string path = Path.Combine(GetProfileBasePath(), ProfileName + ".json");
+
+                    InputConfig config = null;
+
+                    if (IsKeyboard)
+                    {
+                        config = (ConfigViewModel as KeyboardInputViewModel).Config.GetConfig();
+                    }
+                    else if (IsController)
+                    {
+                        config = (ConfigViewModel as ControllerInputViewModel).Config.GetConfig();
+                    }
+
+                    config.ControllerType = Controllers[_controller].Type;
+
+                    string jsonString = JsonHelper.Serialize(config, _serializerContext.InputConfig);
+
+                    await File.WriteAllTextAsync(path, jsonString);
+
+                    LoadProfiles();
+
+                    ChosenProfile = ProfileName; // Show new profile
+                }
+                else
+                {
+                    await ContentDialogHelper.CreateErrorDialog(LocaleManager.Instance[LocaleKeys.DialogProfileInvalidProfileNameErrorMessage]);
+                }
+            }
+        }
+
+        public async void RemoveProfile()
+        {
+            if (Device == 0 || ProfileName == LocaleManager.Instance[LocaleKeys.ControllerSettingsProfileDefault] || ProfilesList.IndexOf(ProfileName) == -1)
+            {
+                return;
+            }
+
+            UserResult result = await ContentDialogHelper.CreateConfirmationDialog(
+                LocaleManager.Instance[LocaleKeys.DialogProfileDeleteProfileTitle],
+                LocaleManager.Instance[LocaleKeys.DialogProfileDeleteProfileMessage],
+                LocaleManager.Instance[LocaleKeys.InputDialogYes],
+                LocaleManager.Instance[LocaleKeys.InputDialogNo],
+                LocaleManager.Instance[LocaleKeys.RyujinxConfirm]);
+
+            if (result == UserResult.Yes)
+            {
+                string path = Path.Combine(GetProfileBasePath(), ProfileName + ".json");
+
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+
+                LoadProfiles();
+
+                ChosenProfile = ProfilesList[0].ToString(); // Show default profile
+            }
+        }
+
+        public void RevertChanges()
+        {
+            LoadConfiguration(); // configuration preload is required if the paired gamepad was disconnected but was changed to another gamepad
+            Device = Devices.ToList().FindIndex(d => d.Id == RevertDeviceId);
+
+            LoadDevice();
+            LoadConfiguration();
+
+            OnPropertyChanged();
+            IsModified = false;
+        }
+
+        public void Save()
+        {
+
+            if (!IsModified)
+            {
+                return; //If the input settings were not touched, then do nothing
+            }
+
+            IsModified = false;
+
+            RevertDeviceId = Devices[Device].Id; // Remember selected device after saving
+
+            List<InputConfig> newConfig = [];
+
+            if (UseGlobalConfig && Program.UseExtraConfig)
+            {
+                newConfig.AddRange(ConfigurationState.InstanceExtra.Hid.InputConfig.Value);
+            }
+            else
+            {
+                newConfig.AddRange(ConfigurationState.Instance.Hid.InputConfig.Value);
+            }
+
+            newConfig.Remove(newConfig.FirstOrDefault(x => x == null));
+
+            if (Device == 0)
+            {
+                newConfig.Remove(newConfig.FirstOrDefault(x => x.PlayerIndex == this.PlayerId));
+            }
+            else
+            {
+                (DeviceType Type, string Id, string Name) device = Devices[Device];
+
+                if (device.Type == DeviceType.Keyboard)
+                {
+                    KeyboardInputConfig inputConfig = (ConfigViewModel as KeyboardInputViewModel).Config;
+                    inputConfig.Id = device.Id;
+                }
+                else
+                {
+                    GamepadInputConfig inputConfig = (ConfigViewModel as ControllerInputViewModel).Config;
+                    inputConfig.Id = device.Id.Split(" ")[0];
+                }
+
+                InputConfig config = !IsController
+                    ? (ConfigViewModel as KeyboardInputViewModel).Config.GetConfig()
+                    : (ConfigViewModel as ControllerInputViewModel).Config.GetConfig();
+                config.ControllerType = Controllers[_controller].Type;
+                config.PlayerIndex = _playerId;
+                config.Name = device.Name;
+
+                int i = newConfig.FindIndex(x => x.PlayerIndex == PlayerId);
+                if (i == -1)
+                {
+                    newConfig.Add(config);
+                }
+                else
+                {
+                    newConfig[i] = config;
+                }
+            }
+
+            // Atomically replace and signal input change.
+            // NOTE: Do not modify InputConfig.Value directly as other code depends on the on-change event.
+            _mainWindow.ViewModel.AppHost?.NpadManager.ReloadConfiguration(newConfig, ConfigurationState.Instance.Hid.EnableKeyboard, ConfigurationState.Instance.Hid.EnableMouse);
+
+            if (UseGlobalConfig && Program.UseExtraConfig)
+            {
+                // In User Settings when "Use Global Input" is enabled, it saves global input to global setting
+                ConfigurationState.InstanceExtra.Hid.InputConfig.Value = newConfig;
+                ConfigurationState.InstanceExtra.ToFileFormat().SaveConfig(Program.GlobalConfigurationPath);
+            }
+            else
+            {
+                ConfigurationState.Instance.Hid.InputConfig.Value = newConfig;
+                ConfigurationState.Instance.ToFileFormat().SaveConfig(Program.ConfigurationPath);
+            }
+        }
+
+        public void NotifyChanges()
+        {
+            OnPropertyChanged(nameof(ConfigViewModel));
+            OnPropertyChanged(nameof(IsController));
+            OnPropertyChanged(nameof(ShowSettings));
+            OnPropertyChanged(nameof(IsKeyboard));
+            OnPropertyChanged(nameof(IsRight));
+            OnPropertyChanged(nameof(IsLeft));
+            NotifyChangesEvent?.Invoke();
+        }
+
+        public void Dispose()
+        {
+            GC.SuppressFinalize(this);
+
+            _mainWindow.InputManager.GamepadDriver.OnGamepadConnected -= HandleOnGamepadConnected;
+            _mainWindow.InputManager.GamepadDriver.OnGamepadDisconnected -= HandleOnGamepadDisconnected;
+
+            _mainWindow.ViewModel.AppHost?.NpadManager.UnblockInputUpdates();
+
+            VisualStick.Dispose();
+
+            SelectedGamepad?.Dispose();
+
+            AvaloniaKeyboardDriver.Dispose();
+        }
+    }
+}

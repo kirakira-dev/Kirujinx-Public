@@ -1,0 +1,43 @@
+<Window
+    x:Class="Ryujinx.Ava.UI.Windows.KiraKiraPrankWindow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:windows="clr-namespace:Ryujinx.Ava.UI.Windows"
+    mc:Ignorable="d"
+    x:DataType="windows:KiraKiraPrankWindow"
+    d:DesignWidth="800"
+    d:DesignHeight="450"
+    Title="KIRA KIRA"
+    WindowState="FullScreen"
+    SystemDecorations="None"
+    CanResize="False"
+    Topmost="True"
+    ShowInTaskbar="False">
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Cmd+Q" Command="{Binding CloseCommand}" />
+        <KeyBinding Gesture="Ctrl+Q" Command="{Binding CloseCommand}" />
+        <KeyBinding Gesture="Alt+F4" Command="{Binding CloseCommand}" />
+    </Window.KeyBindings>
+    <Grid Name="FlashGrid" Background="Black">
+        <TextBlock 
+            Name="PrankText"
+            Text="YOU WERE KIRAKIRA'ED"
+            FontSize="72"
+            FontWeight="Bold"
+            Foreground="White"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            TextAlignment="Center">
+            <TextBlock.Effect>
+                <DropShadowEffect 
+                    Color="Black" 
+                    BlurRadius="10" 
+                    OffsetX="4" 
+                    OffsetY="4" 
+                    Opacity="0.8"/>
+            </TextBlock.Effect>
+        </TextBlock>
+    </Grid>
+</Window>

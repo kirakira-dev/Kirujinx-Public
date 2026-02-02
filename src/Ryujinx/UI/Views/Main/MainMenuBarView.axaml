@@ -1,0 +1,298 @@
+<UserControl
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ext="clr-namespace:Ryujinx.Ava.Common.Markup"
+    mc:Ignorable="d"
+    xmlns:viewModels="clr-namespace:Ryujinx.Ava.UI.ViewModels"
+    xmlns:controls="clr-namespace:Ryujinx.Ava.UI.Controls"
+    xmlns:common="clr-namespace:Ryujinx.Common;assembly=Ryujinx.Common"
+    xmlns:renderDocApi="clr-namespace:Ryujinx.Graphics.RenderDocApi;assembly=Ryujinx.Graphics.RenderDocApi"
+    x:DataType="viewModels:MainWindowViewModel"
+    x:Class="Ryujinx.Ava.UI.Views.Main.MainMenuBarView">
+    <Design.DataContext>
+        <viewModels:MainWindowViewModel />
+    </Design.DataContext>
+    <DockPanel HorizontalAlignment="Stretch">
+        <controls:RyujinxLogo 
+            Margin="7, 0" 
+            ToolTip.Tip="{Binding Title}"/>
+        <Menu
+            Name="Menu"
+            Height="32"
+            Margin="0"
+            HorizontalAlignment="Left"
+            IsOpen="{Binding IsSubMenuOpen, Mode=OneWayToSource}">
+            <Menu.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <DockPanel Margin="0" HorizontalAlignment="Stretch" />
+                </ItemsPanelTemplate>
+            </Menu.ItemsPanel>
+            <MenuItem VerticalAlignment="Center" Header="{ext:Locale MenuBarFile}">
+                <MenuItem
+                    Command="{Binding OpenFile}"
+                    Header="{ext:Locale MenuBarFileOpenFromFile}"
+                    Icon="{ext:Icon fa-solid fa-file}"
+                    IsEnabled="{Binding EnableNonGameRunningControls}" />
+                <MenuItem
+                    Command="{Binding OpenFolder}"
+                    Header="{ext:Locale MenuBarFileOpenUnpacked}"
+                    Icon="{ext:Icon fa-solid fa-folder-open}"
+                    IsEnabled="{Binding EnableNonGameRunningControls}" />
+                <MenuItem
+                    Command="{Binding LoadTitleUpdatesFromFolder}"
+                    Header="{ext:Locale MenuBarFileLoadTitleUpdatesFromFolder}"
+                    Icon="{ext:Icon fa-solid fa-diagram-predecessor}"
+                    IsEnabled="{Binding EnableNonGameRunningControls}" />
+                <MenuItem
+                    Command="{Binding LoadDlcFromFolder}"
+                    Header="{ext:Locale MenuBarFileLoadDlcFromFolder}"
+                    Icon="{ext:Icon fa-solid fa-puzzle-piece}"
+                    IsEnabled="{Binding EnableNonGameRunningControls}" />
+                <Separator />
+                <MenuItem
+                    Command="{Binding OpenRyujinxFolder}"
+                    Header="{ext:Locale MenuBarFileOpenEmuFolder}"
+                    Icon="{ext:Icon fa-solid fa-folder-closed}" />
+                <MenuItem
+                    Command="{Binding OpenLogsFolder}"
+                    Header="{ext:Locale MenuBarFileOpenLogsFolder}"
+                    Icon="{ext:Icon fa-solid fa-terminal}" />
+                <MenuItem
+                    Command="{Binding OpenScreenshotsFolder}"
+                    Header="{ext:Locale MenuBarFileOpenScreenshotsFolder}"
+                    Icon="{ext:Icon fa-solid fa-image}" />
+                <Separator />
+                <MenuItem
+                    Name="CloseRyujinxMenuItem"
+                    Header="{ext:Locale MenuBarFileExit}"
+                    Icon="{ext:Icon fa-solid fa-power-off}" />
+            </MenuItem>
+            <MenuItem VerticalAlignment="Center" Header="{ext:Locale MenuBarOptions}">
+                <MenuItem
+                    Command="{Binding ToggleFullscreen}"
+                    Header="{ext:Locale MenuBarOptionsToggleFullscreen}"
+                    Classes="withCheckbox"
+                    Padding="0"
+                    Icon="{ext:Icon fa-solid fa-expand}"
+                    InputGesture="F11">
+                </MenuItem>
+                <MenuItem
+                    Padding="0"
+                    Command="{Binding ToggleStartGamesInFullscreen}"
+                    Header="{ext:Locale MenuBarOptionsStartGamesInFullscreen}"
+                    Classes="withCheckbox">
+                    <MenuItem.Icon>
+                        <CheckBox
+                            MinWidth="{DynamicResource CheckBoxSize}"
+                            MinHeight="{DynamicResource CheckBoxSize}"
+                            IsChecked="{Binding StartGamesInFullscreen, Mode=TwoWay}"
+                            Padding="0" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem
+                    Padding="0"
+                    Command="{Binding ToggleStartGamesWithoutUi}"
+                    Header="{ext:Locale MenuBarOptionsStartGamesWithoutUI}"
+                    Classes="withCheckbox">
+                    <MenuItem.Icon>
+                        <CheckBox
+                            MinWidth="{DynamicResource CheckBoxSize}"
+                            MinHeight="{DynamicResource CheckBoxSize}"
+                            IsChecked="{Binding StartGamesWithoutUi, Mode=TwoWay}"
+                            Padding="0" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem
+                    Padding="0"
+                    IsVisible="{Binding ShowConsoleVisible}"
+                    Command="{Binding ToggleShowConsole}"
+                    Header="{ext:Locale MenuBarOptionsShowConsole}"
+                    Classes="withCheckbox">
+                    <MenuItem.Icon>
+                        <CheckBox
+                            MinWidth="{DynamicResource CheckBoxSize}"
+                            MinHeight="{DynamicResource CheckBoxSize}"
+                            IsChecked="{Binding ShowConsole, Mode=TwoWay}"
+                            Padding="0" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem
+                    Name="ChangeLanguageMenuItem" 
+                    Padding="0"
+                    Header="{ext:Locale MenuBarOptionsChangeLanguage}"
+                    Icon="{ext:Icon fa-solid fa-globe}"
+                    Classes="withCheckbox">
+                </MenuItem>
+                <MenuItem
+                    Name="OpenSettingsMenuItem"
+                    Padding="0"
+                    Header="{ext:Locale MenuBarOptionsSettings}"
+                    Icon="{ext:Icon fa-solid fa-gear}"
+                    Classes="withCheckbox">
+                </MenuItem>
+                <MenuItem
+                    Command="{Binding ManageProfiles}"
+                    Padding="0"
+                    Header="{ext:Locale MenuBarOptionsManageUserProfiles}"
+                    Icon="{ext:Icon fa-solid fa-user}"
+                    IsEnabled="{Binding EnableNonGameRunningControls}"
+                    Classes="withCheckbox">
+                </MenuItem>
+            </MenuItem>
+            <MenuItem
+                Name="ActionsMenuItem"
+                VerticalAlignment="Center"
+                Header="{ext:Locale MenuBarActions}"
+                IsVisible="{Binding !EnableNonGameRunningControls}">
+                <MenuItem
+                    Name="PauseEmulationMenuItem"
+                    Header="{ext:Locale MenuBarOptionsPauseEmulation}"
+                    Icon="{ext:Icon fa-solid fa-pause}"
+                    InputGesture="{Binding PauseKey}"
+                    IsEnabled="{Binding !IsPaused}"
+                    IsVisible="{Binding !IsPaused}" />
+                <MenuItem
+                    Name="ResumeEmulationMenuItem"
+                    Header="{ext:Locale MenuBarOptionsResumeEmulation}"
+                    Icon="{ext:Icon fa-solid fa-play}"
+                    InputGesture="{Binding PauseKey}"
+                    IsEnabled="{Binding IsPaused}"
+                    IsVisible="{Binding IsPaused}" />
+                <MenuItem
+                    Name="StopEmulationMenuItem"
+                    Header="{ext:Locale MenuBarOptionsStopEmulation}"
+                    Icon="{ext:Icon fa-solid fa-stop}"
+                    InputGesture="Escape"
+                    IsEnabled="{Binding IsGameRunning}" />
+                <MenuItem Command="{Binding SimulateWakeUpMessage}" Header="{ext:Locale MenuBarOptionsSimulateWakeUpMessage}" Icon="{ext:Icon fa-solid fa-sun}" />
+                <Separator />
+                <MenuItem
+                    Command="{Binding OpenAmiiboWindow}"
+                    AttachedToVisualTree="ScanAmiiboMenuItem_AttachedToVisualTree"
+                    Header="{ext:Locale MenuBarActionsScanAmiibo}"
+                    Icon="{ext:Icon fa-solid fa-cube}"
+                    InputGesture="Ctrl + A"
+                    IsEnabled="{Binding IsAmiiboRequested}" />
+                <MenuItem
+                    Command="{Binding OpenBinFile}"
+                    AttachedToVisualTree="ScanBinAmiiboMenuItem_AttachedToVisualTree"
+                    Header="{ext:Locale MenuBarActionsScanAmiiboBin}"
+                    Icon="{ext:Icon fa-solid fa-cube}"
+                    IsVisible="{Binding CanScanAmiiboBinaries}"
+                    InputGesture="Ctrl + B"
+                    IsEnabled="{Binding IsAmiiboBinRequested}" />
+                <MenuItem
+                    Command="{Binding TakeScreenshot}"
+                    Header="{ext:Locale MenuBarFileToolsTakeScreenshot}"
+                    Icon="{ext:Icon fa-solid fa-camera}"
+                    InputGesture="{Binding ScreenshotKey}"
+                    IsEnabled="{Binding IsGameRunning}" />
+                <MenuItem
+                    Command="{Binding HideUi}"
+                    Header="{ext:Locale MenuBarFileToolsHideUi}"
+                    Icon="{ext:Icon fa-solid fa-eye-slash}"
+                    InputGesture="{Binding ShowUiKey}"
+                    IsEnabled="{Binding IsGameRunning}" />
+                <MenuItem
+                    Name="CheatManagerMenuItem"
+                    Header="{ext:Locale GameListContextMenuManageCheat}"
+                    Icon="{ext:Icon fa-solid fa-code}"
+                    IsEnabled="{Binding IsGameRunning}" />
+                <Separator IsVisible="{Binding RenderDocIsAvailable}" />
+                <MenuItem
+                    IsVisible="{Binding ShowStartCaptureButton}"
+                    Command="{Binding StartRenderDocCapture}"
+                    CommandParameter="{Binding}"
+                    Header="{ext:Locale RenderDoc_MenuBarActions_StartCapture}"
+                    Icon="{ext:Icon fa-solid fa-video}"
+                    IsEnabled="{Binding IsGameRunning}" />
+                <MenuItem
+                    IsVisible="{Binding ShowEndCaptureButton}"
+                    Command="{Binding EndRenderDocCapture}"
+                    CommandParameter="{Binding}"
+                    Header="{ext:Locale RenderDoc_MenuBarActions_EndCapture}"
+                    Icon="{ext:Icon fa-solid fa-video-slash}"
+                    IsEnabled="{Binding IsGameRunning}" />
+                <MenuItem
+                    IsVisible="{Binding ShowEndCaptureButton}"
+                    Command="{Binding DiscardRenderDocCapture}"
+                    CommandParameter="{Binding}"
+                    Header="{ext:Locale RenderDoc_MenuBarActions_DiscardCapture}"
+                    ToolTip.Tip="{ext:Locale RenderDoc_MenuBarActions_DiscardCapture_ToolTip}"
+                    Icon="{ext:Icon fa-solid fa-video-slash}"
+                    IsEnabled="{Binding IsGameRunning}" />
+            </MenuItem>
+            <MenuItem VerticalAlignment="Center" Header="{ext:Locale MenuBarActions}" IsVisible="{Binding EnableNonGameRunningControls}">
+                <MenuItem Header="{ext:Locale MenuBarActionsInstallKeys}" Icon="{ext:Icon fa-solid fa-key}">
+                    <MenuItem Command="{Binding InstallKeysFromFile}" Header="{ext:Locale MenuBarFileActionsInstallKeysFromFile}" Icon="{ext:Icon fa-solid fa-file-code}" />
+                    <MenuItem Command="{Binding InstallKeysFromFolder}" Header="{ext:Locale MenuBarFileActionsInstallKeysFromFolder}" Icon="{ext:Icon fa-solid fa-folder-closed}" />
+                </MenuItem>
+                <MenuItem Header="{ext:Locale MenuBarActionsInstallFirmware}" Icon="{ext:Icon fa-solid fa-floppy-disk}">
+                    <MenuItem Command="{Binding InstallFirmwareFromFile}" Header="{ext:Locale MenuBarActionsInstallFirmwareFromFile}" Icon="{ext:Icon fa-solid fa-file-code}" />
+                    <MenuItem Command="{Binding InstallFirmwareFromFolder}" Header="{ext:Locale MenuBarActionsInstallFirmwareFromDirectory}" Icon="{ext:Icon fa-solid fa-folder-closed}" />
+                </MenuItem>
+                <MenuItem Header="{ext:Locale MenuBarActionsManageFileTypes}" IsVisible="{Binding ManageFileTypesVisible}" Icon="{ext:Icon fa-solid fa-clipboard}">
+                    <MenuItem Name="InstallFileTypesMenuItem" Header="{ext:Locale MenuBarActionsInstallFileTypes}" IsEnabled="{Binding AreMimeTypesRegistered, Converter={x:Static BoolConverters.Not}}" Icon="{ext:Icon fa-solid fa-square-plus}" />
+                    <MenuItem Name="UninstallFileTypesMenuItem" Header="{ext:Locale MenuBarActionsUninstallFileTypes}" IsEnabled="{Binding AreMimeTypesRegistered}" Icon="{ext:Icon fa-solid fa-square-minus}" />
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="{ext:Locale MenuBarActionsTools}" Icon="{ext:Icon fa-solid fa-toolbox}">
+                    <MenuItem
+                        Name="MiiAppletMenuItem" Header="{ext:Locale MenuBarActionsOpenMiiEditor}" Icon="{ext:Icon fa-solid fa-face-grin-wide}" ToolTip.Tip="{ext:Locale MenuBarActionsOpenMiiEditorToolTip}" />
+                    <MenuItem Name="XciTrimmerMenuItem" Header="{ext:Locale MenuBarActionsXCITrimmer}" Icon="{ext:Icon fa-solid fa-scissors}" />
+                </MenuItem>
+            </MenuItem>
+            <MenuItem VerticalAlignment="Center" Header="{ext:Locale MenuBarView}">
+                <MenuItem VerticalAlignment="Center" Header="{ext:Locale MenuBarViewWindow}" Icon="{ext:Icon fa-solid fa-window-restore}">
+                    <MenuItem Name="WindowSize720PMenuItem" Header="{ext:Locale MenuBarViewWindow720}" CommandParameter="1280 720" />
+                    <MenuItem Name="WindowSize1080PMenuItem" Header="{ext:Locale MenuBarViewWindow1080}" CommandParameter="1920 1080" />
+                    <MenuItem Name="WindowSize1440PMenuItem" Header="{ext:Locale MenuBarViewWindow1440}" CommandParameter="2560 1440" />
+                    <MenuItem Name="WindowSize2160PMenuItem" Header="{ext:Locale MenuBarViewWindow2160}" CommandParameter="3840 2160" />
+                </MenuItem>
+                <MenuItem Name="ToggleFileTypesMenuItem" Header="{ext:Locale MenuBarShowFileTypes}" Icon="{ext:Icon fa-solid fa-tags}" />
+            </MenuItem>
+            <MenuItem VerticalAlignment="Center" Header="{ext:Locale MenuBarHelp}">
+                <MenuItem
+                    Name="AboutWindowMenuItem"
+                    Header="{ext:Locale MenuBarHelpAbout}"
+                    Icon="{ext:Icon fa-solid fa-circle-info}" />
+                <MenuItem
+                    Name="CompatibilityListMenuItem"
+                    Header="{ext:Locale CompatibilityListOpen}"
+                    Icon="{ext:Icon fa-solid fa-database}"/>
+                <MenuItem
+                    Name="LdnGameListMenuItem"
+                    Header="{ext:Locale LdnGameListOpen}"
+                    Icon="{ext:Icon fa-solid fa-people-group}"
+                    IsEnabled="{Binding IsRyuLdnEnabled}"/>
+                <Separator />
+                <MenuItem VerticalAlignment="Center" Header="{ext:Locale MenuBarHelpFaqAndGuides}" Icon="{ext:Icon fa-solid fa-question}" >
+                    <MenuItem
+                        Name="SetupGuideMenuItem"
+                        Header="{ext:Locale MenuBarHelpSetup}"
+                        Icon="{ext:Icon fa-brands fa-gitlab}"
+                        CommandParameter="{x:Static common:SharedConstants.SetupGuideWikiUrl}" />
+                    <MenuItem
+                        Name="LdnGuideMenuItem"
+                        Header="{ext:Locale MenuBarHelpMultiplayer}"
+                        Icon="{ext:Icon fa-brands fa-gitlab}"
+                        CommandParameter="{x:Static common:SharedConstants.MultiplayerWikiUrl}" />
+                    <MenuItem
+                        Name="FaqMenuItem"
+                        Header="{ext:Locale MenuBarHelpFaq}"
+                        Icon="{ext:Icon fa-brands fa-gitlab}"
+                        CommandParameter="{x:Static common:SharedConstants.FaqWikiUrl}" />
+                </MenuItem>
+                <Separator />
+                <MenuItem
+                    Name="UpdateMenuItem"
+                    IsEnabled="{Binding CanUpdate}"
+                    Header="{ext:Locale MenuBarHelpCheckForUpdates}"
+                    Icon="{ext:Icon fa-solid fa-rotate}" />
+            </MenuItem>
+        </Menu>
+    </DockPanel>
+</UserControl>
