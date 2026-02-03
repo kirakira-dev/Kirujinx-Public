@@ -1416,7 +1416,7 @@ namespace Ryujinx.Graphics.Vulkan
                 Span<PipelineColorBlendAttachmentState> colorBlendAttachmentStateSpan =
                     _newState.Internal.ColorBlendAttachmentState.AsSpan();
 
-                int colorCount = Math.Min(colors.Length, Constants.MaxRenderTargets);
+                int colorCount = Math.Min(colors.Length, Math.Min(Constants.MaxRenderTargets, colorBlendAttachmentStateSpan.Length));
                 for (int i = 0; i < colorCount; i++)
                 {
                     if (colors[i] == null)
